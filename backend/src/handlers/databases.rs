@@ -45,15 +45,13 @@ pub async fn get_table_data(
     Path((id, table)): Path<(Uuid, String)>,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<Json<TableDataResponse>, AppError> {
-    let page = pagination.page.unwrap_or(1);
-    let page_size = pagination.page_size.unwrap_or(50);
     Ok(Json(
         services::get_table_data(
             &state.pool,
             id,
             &table,
-            page,
-            page_size,
+            pagination.resolved_page(),
+            pagination.resolved_limit(),
             &state.config.secret_key,
         )
         .await?,

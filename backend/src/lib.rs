@@ -1,7 +1,7 @@
 use axum::{
     http::{HeaderValue, Method},
     middleware::from_fn_with_state,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -43,17 +43,40 @@ pub fn build_router(state: AppState) -> Router {
     };
 
     let api_routes = Router::new()
-        // Projects
+        // ── Projects ───────────────────────────────────────────────────────
+        // GET  /api/projects
+        // POST /api/projects          { name, connection_string, description?, repository_url? }
         .route(
             "/projects",
-            get(handlers::projects::list_projects).post(handlers::projects::create_project),
+            get(handlers::projects::list_projects)
+                .post(handlers::projects::create_project),
         )
-        // Databases — list / create
+        // GET  /api/projects/:id/tables
+        .route(
+            "/projects/:id/tables",
+            get(handlers::projects::list_tables),
+        )
+        // GET  /api/projects/:id/tables/:table?page=1&limit=50
+        .route(
+            "/projects/:id/tables/:table",
+            get(handlers::projects::get_table_data),
+        )
+        // POST /api/projects/:id/query          { sql }
+        .route(
+            "/projects/:id/query",
+            post(handlers::projects::execute_query),
+        )
+        // DELETE /api/projects/:id/tables/:table/:row_id?pk=id
+        .route(
+            "/projects/:id/tables/:table/:row_id",
+            delete(handlers::projects::delete_row),
+        )
+        // ── Databases (connection-URL registry) ────────────────────────────
         .route(
             "/databases",
-            get(handlers::databases::list_databases).post(handlers::databases::create_database),
+            get(handlers::databases::list_databases)
+                .post(handlers::databases::create_database),
         )
-        // Database exploration
         .route(
             "/databases/:id/tables",
             get(handlers::databases::list_tables),
@@ -66,14 +89,15 @@ pub fn build_router(state: AppState) -> Router {
             "/databases/:id/query",
             post(handlers::databases::execute_query),
         )
-        // Secrets
+        // ── Secrets ────────────────────────────────────────────────────────
         .route(
             "/secrets",
-            get(handlers::secrets::list_secrets).post(handlers::secrets::create_secret),
+            get(handlers::secrets::list_secrets)
+                .post(handlers::secrets::create_secret),
         )
-        // Admin
+        // ── Admin ──────────────────────────────────────────────────────────
         .route("/admin/summary", get(handlers::admin::summary))
-        // Every /api route requires a valid JWT
+        // Every /api/* route requires a valid JWT
         .route_layer(from_fn_with_state(
             state.clone(),
             middleware::auth::require_auth,
@@ -81,6 +105,7 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health::health))
+        // POST /auth/login  { password } → { token, expires_in }
         .route("/auth/login", post(handlers::auth::login))
         .nest("/api", api_routes)
         .layer(cors)

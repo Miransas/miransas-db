@@ -80,3 +80,6 @@ miransas-db/
 │  └─ docker-compose.prod.yml
 ├─ frontend/
 └─ .gitignore
+
+To build:                                                                                                                          
+  # from repo root docker build -f docker/Dockerfile -t miransas-db .# or via compose (from docker/ directory) docker compose up --build 

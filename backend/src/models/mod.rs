@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// ── Projects ─────────────────────────────────────────────────────────────────
+// ── Projects ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Project {
@@ -19,6 +19,9 @@ pub struct CreateProjectRequest {
     pub name: String,
     pub description: Option<String>,
     pub repository_url: Option<String>,
+    /// Postgres connection string, e.g. `postgres://user:pass@host:5432/db`.
+    /// Stored AES-256-GCM encrypted; never returned in API responses.
+    pub connection_string: Option<String>,
 }
 
 // ── Databases ─────────────────────────────────────────────────────────────────
@@ -48,8 +51,7 @@ pub struct CreateDatabaseRequest {
     pub database_name: Option<String>,
     pub username: Option<String>,
     pub notes: Option<String>,
-    /// Full connection URL (e.g. postgres://user:pass@host:5432/db).
-    /// Stored encrypted; never returned in responses.
+    /// Full connection URL stored encrypted; never returned in responses.
     pub connection_url: Option<String>,
 }
 
@@ -62,10 +64,24 @@ pub struct TableInfo {
     pub table_type: String,
 }
 
+/// Query params for paginated table data.
+/// Accepts both `page_size` and `limit` (alias) so callers can use either.
 #[derive(Debug, Deserialize)]
 pub struct PaginationQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+    /// Alias for `page_size` — whichever is set wins; `page_size` takes precedence.
+    pub limit: Option<i64>,
+}
+
+impl PaginationQuery {
+    pub fn resolved_page(&self) -> i64 {
+        self.page.unwrap_or(1).max(1)
+    }
+
+    pub fn resolved_limit(&self) -> i64 {
+        self.page_size.or(self.limit).unwrap_or(50).clamp(1, 200)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +106,15 @@ pub struct QueryResult {
     pub rows: Vec<serde_json::Value>,
     pub rows_affected: Option<u64>,
     pub message: String,
+}
+
+// ── Row delete ────────────────────────────────────────────────────────────────
+
+/// Optional query params for the DELETE /projects/:id/tables/:table/:row_id route.
+#[derive(Debug, Deserialize)]
+pub struct DeleteRowQuery {
+    /// Name of the primary-key column. Defaults to `"id"` if omitted.
+    pub pk: Option<String>,
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────────
