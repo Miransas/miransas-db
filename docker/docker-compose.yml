@@ -1,21 +1,66 @@
-version: '3.8'
+version: "3.9"
+
+# ── Shared environment ────────────────────────────────────────────────────────
+x-backend-env: &backend-env
+  DATABASE_URL:            postgres://sardor:${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}@postgres:5432/miransas_db
+  DATABASE_MAX_CONNECTIONS: "10"
+  APP_HOST:                "0.0.0.0"
+  APP_PORT:                "3001"
+  ADMIN_PASSWORD:          ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+  JWT_SECRET:              ${JWT_SECRET:?JWT_SECRET is required (min 32 chars)}
+  SECRET_KEY:              ${SECRET_KEY:?SECRET_KEY is required (min 32 chars)}
+  CORS_ORIGIN:             ${CORS_ORIGIN:-http://localhost:3000}
+  RUST_LOG:                miransas_db=info,tower_http=info
 
 services:
-  miransas-db-postgres:
-    image: postgres:15-alpine
-    container_name: miransas-db
-    restart: always
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: miransas-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: sardor
-      POSTGRES_PASSWORD: Mir@2001_2021_2023ms
-      POSTGRES_DB: miransas_main
+      POSTGRES_USER:     sardor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}
+      POSTGRES_DB:       miransas_db
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./data:/var/lib/postgresql/data # Verilerin silinmemesi için persistency
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sardor -d miransas_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - miransas_network
+      - miransas_net
+
+  # ── Backend (Rust / Axum) ────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: miransas-backend
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - miransas_net
+
+volumes:
+  postgres_data:
 
 networks:
-  miransas_network:
+  miransas_net:
     driver: bridge

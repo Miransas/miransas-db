@@ -1,0 +1,20 @@
+# Development override — hot-reload-friendly, no backend image build.
+# Usage:  docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up
+version: "3.9"
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"   # expose directly so `cargo run` can reach it
+
+  backend:
+    build: !reset null       # don't build image in dev
+    image: !reset null
+    command: !reset null
+    volumes:
+      - ../backend:/app       # mount source for cargo-watch / manual reruns
+    working_dir: /app
+    entrypoint: ["cargo", "run"]
+    environment:
+      DATABASE_URL: postgres://sardor:${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}@postgres:5432/miransas_db
+      RUST_LOG: miransas_db=debug,tower_http=debug

@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  devcontainer:
+    image: mcr.microsoft.com/devcontainers/rust:1-bullseye
+    volumes:
+      - ..:/workspace:cached
+      - cargo-cache:/usr/local/cargo/registry
+    command: sleep infinity
+    environment:
+      DATABASE_URL: postgres://sardor:devpassword@postgres:5432/miransas_dev
+      ADMIN_PASSWORD: dev-admin-password
+      JWT_SECRET: dev-jwt-secret-key-32chars-minimum!
+      SECRET_KEY: dev-secret-key-32chars-minimum-ok!
+      CORS_ORIGIN: http://localhost:3000
+      RUST_LOG: miransas_db=debug,tower_http=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - miransas_dev_net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     sardor
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB:       miransas_dev
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sardor -d miransas_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - miransas_dev_net
+
+volumes:
+  dev_postgres_data:
+  cargo-cache:
+
+networks:
+  miransas_dev_net:
+    driver: bridge
