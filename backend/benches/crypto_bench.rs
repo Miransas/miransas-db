@@ -8,7 +8,10 @@ fn bench_crypto(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("crypto");
 
-    for payload in ["short", "a somewhat longer secret value for testing purposes"] {
+    for payload in [
+        "short",
+        "a somewhat longer secret value for testing purposes",
+    ] {
         group.bench_with_input(
             BenchmarkId::new("encrypt", payload.len()),
             payload,

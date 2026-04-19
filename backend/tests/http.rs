@@ -10,8 +10,9 @@ fn test_config() -> Config {
     Config {
         app_host: "127.0.0.1".to_string(),
         app_port: 3001,
-        database_url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/miransas_test".to_string()),
+        database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:postgres@localhost:5432/miransas_test".to_string()
+        }),
         database_max_connections: 1,
         admin_password: "test-admin-password".to_string(),
         jwt_secret: "test-jwt-secret-key-exactly-32chars".to_string(),
@@ -35,7 +36,12 @@ fn test_state() -> AppState {
 async fn health_returns_200() {
     let app = build_router(test_state());
     let response = app
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);

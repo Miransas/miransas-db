@@ -65,10 +65,9 @@ pub async fn get_table_data(
     let offset = (page - 1) * page_size;
 
     // Total row count.
-    let total: i64 =
-        sqlx::query_scalar(&format!("SELECT COUNT(*)::BIGINT FROM {quoted}"))
-            .fetch_one(&mut conn)
-            .await?;
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*)::BIGINT FROM {quoted}"))
+        .fetch_one(&mut conn)
+        .await?;
 
     // Rows as JSON text.
     let rows_raw: Vec<String> = sqlx::query_scalar(&format!(
@@ -137,19 +136,14 @@ pub async fn execute_query(
     let url = connection_url(pool, db_id, secret_key).await?;
     let mut conn = sqlx::postgres::PgConnection::connect(&url).await?;
 
-    let first_word = sql
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_uppercase();
+    let first_word = sql.split_whitespace().next().unwrap_or("").to_uppercase();
 
-    if matches!(first_word.as_str(), "SELECT" | "WITH" | "VALUES" | "TABLE" | "EXPLAIN") {
-        let wrapped = format!(
-            "SELECT row_to_json(_q)::TEXT FROM ({sql}) _q LIMIT 10000"
-        );
-        let rows_raw: Vec<String> = sqlx::query_scalar(&wrapped)
-            .fetch_all(&mut conn)
-            .await?;
+    if matches!(
+        first_word.as_str(),
+        "SELECT" | "WITH" | "VALUES" | "TABLE" | "EXPLAIN"
+    ) {
+        let wrapped = format!("SELECT row_to_json(_q)::TEXT FROM ({sql}) _q LIMIT 10000");
+        let rows_raw: Vec<String> = sqlx::query_scalar(&wrapped).fetch_all(&mut conn).await?;
 
         let rows: Vec<serde_json::Value> = rows_raw
             .iter()

@@ -48,8 +48,15 @@ pub async fn get_table_data(
     let page = pagination.page.unwrap_or(1);
     let page_size = pagination.page_size.unwrap_or(50);
     Ok(Json(
-        services::get_table_data(&state.pool, id, &table, page, page_size, &state.config.secret_key)
-            .await?,
+        services::get_table_data(
+            &state.pool,
+            id,
+            &table,
+            page,
+            page_size,
+            &state.config.secret_key,
+        )
+        .await?,
     ))
 }
 
