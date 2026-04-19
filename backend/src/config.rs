@@ -8,8 +8,10 @@ pub struct Config {
     pub app_port: u16,
     pub database_url: String,
     pub database_max_connections: u32,
-    pub admin_token: String,
+    pub admin_password: String,
+    pub jwt_secret: String,
     pub secret_key: String,
+    pub cors_origin: String,
 }
 
 impl Config {
@@ -22,13 +24,17 @@ impl Config {
         let database_max_connections = env_or("DATABASE_MAX_CONNECTIONS", "10")
             .parse::<u32>()
             .context("DATABASE_MAX_CONNECTIONS must be a positive integer")?;
-        let admin_token = required_env("ADMIN_TOKEN")?;
+        let admin_password = required_env("ADMIN_PASSWORD")?;
+        let jwt_secret = required_env("JWT_SECRET")?;
         let secret_key = required_env("SECRET_KEY")?;
+        let cors_origin = env_or("CORS_ORIGIN", "http://localhost:3000");
 
-        if admin_token.len() < 16 {
-            anyhow::bail!("ADMIN_TOKEN must be at least 16 characters");
+        if admin_password.len() < 8 {
+            anyhow::bail!("ADMIN_PASSWORD must be at least 8 characters");
         }
-
+        if jwt_secret.len() < 32 {
+            anyhow::bail!("JWT_SECRET must be at least 32 characters");
+        }
         if secret_key.len() < 32 {
             anyhow::bail!("SECRET_KEY must be at least 32 characters");
         }
@@ -38,8 +44,10 @@ impl Config {
             app_port,
             database_url,
             database_max_connections,
-            admin_token,
+            admin_password,
+            jwt_secret,
             secret_key,
+            cors_origin,
         })
     }
 
