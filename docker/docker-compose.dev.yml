@@ -1,20 +1,31 @@
-# Development override — hot-reload-friendly, no backend image build.
-# Usage:  docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up
 version: "3.9"
 
 services:
   postgres:
+    image: postgres:15-alpine
+    container_name: miransas-db-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: sardor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}
+      POSTGRES_DB: miransas_db
     ports:
-      - "5432:5432"   # expose directly so `cargo run` can reach it
-
-  backend:
-    build: !reset null       # don't build image in dev
-    image: !reset null
-    command: !reset null
+      - "5432:5432" # MacBook üzerinden 'localhost:5432' ile bağlanabilirsin
     volumes:
-      - ../backend:/app       # mount source for cargo-watch / manual reruns
+      - ./postgres_data:/var/lib/postgresql/data
+
+  # Backend'i Docker içinde koşturmak istiyorsan:
+  backend:
+    image: rust:1.75-slim # Veya kendi image ismin
+    container_name: miransas-db-backend
+    volumes:
+      - ../backend:/app
     working_dir: /app
-    entrypoint: ["cargo", "run"]
+    # Docker içindeyken host adı 'postgres' olur
     environment:
       DATABASE_URL: postgres://sardor:${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}@postgres:5432/miransas_db
-      RUST_LOG: miransas_db=debug,tower_http=debug
+      RUST_LOG: debug
+    depends_on:
+      - postgres
+    # Eğer cargo-watch yüklü ise hot-reload çalışır
+    command: cargo run
