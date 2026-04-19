@@ -3,7 +3,10 @@ use uuid::Uuid;
 
 use crate::{
     errors::AppError,
-    models::{CreateProjectRequest, Project, QueryResult, TableDataResponse, TableInfo},
+    models::{
+        CreateProjectRequest, Project, QueryResult, TableDataResponse, TableInfo,
+        UpdateProjectRequest,
+    },
     utils::crypto,
 };
 
@@ -226,6 +229,112 @@ pub async fn delete_project_row(
     .await?;
 
     Ok(affected)
+}
+
+/// Update a project's mutable fields. Absent fields keep their existing value;
+/// an empty string sets the field to NULL (except `name`, which must remain non-empty).
+pub async fn update_project(
+    pool: &PgPool,
+    secret_key: &str,
+    id: Uuid,
+    input: UpdateProjectRequest,
+) -> Result<Project, AppError> {
+    // A private struct so we can read the encrypted column too.
+    #[derive(sqlx::FromRow)]
+    struct ProjectFull {
+        name: String,
+        description: Option<String>,
+        repository_url: Option<String>,
+        connection_string_encrypted: Option<String>,
+    }
+
+    let existing = sqlx::query_as::<_, ProjectFull>(
+        r#"
+        SELECT name, description, repository_url, connection_string_encrypted
+        FROM   projects
+        WHERE  id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("project {id} not found")))?;
+
+    let name = match input.name {
+        Some(n) => required_text("name", n)?,
+        None => existing.name,
+    };
+
+    let description = if input.description.is_some() {
+        empty_to_none(input.description)
+    } else {
+        existing.description
+    };
+
+    let repository_url = if input.repository_url.is_some() {
+        empty_to_none(input.repository_url)
+    } else {
+        existing.repository_url
+    };
+
+    let connection_string_encrypted = match input.connection_string {
+        None => existing.connection_string_encrypted,
+        Some(ref s) if s.trim().is_empty() => None,
+        Some(s) => Some(crypto::encrypt(secret_key, s.trim())?),
+    };
+
+    let project = sqlx::query_as::<_, Project>(
+        r#"
+        UPDATE projects
+        SET    name = $2,
+               description = $3,
+               repository_url = $4,
+               connection_string_encrypted = $5
+        WHERE  id = $1
+        RETURNING id, name, description, repository_url, created_at, updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(&name)
+    .bind(description)
+    .bind(repository_url)
+    .bind(connection_string_encrypted)
+    .fetch_one(pool)
+    .await?;
+
+    insert_audit_log(
+        pool,
+        "update",
+        "project",
+        Some(id),
+        Some(format!("updated project {name}")),
+    )
+    .await?;
+
+    Ok(project)
+}
+
+/// Delete a project by id. Returns 404 if not found.
+pub async fn delete_project(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let result = sqlx::query("DELETE FROM projects WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("project {id} not found")));
+    }
+
+    insert_audit_log(
+        pool,
+        "delete",
+        "project",
+        Some(id),
+        Some(format!("deleted project {id}")),
+    )
+    .await?;
+
+    Ok(())
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────

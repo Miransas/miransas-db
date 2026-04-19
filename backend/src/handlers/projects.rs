@@ -9,7 +9,7 @@ use crate::{
     errors::AppError,
     models::{
         CreateProjectRequest, DeleteRowQuery, PaginationQuery, Project, QueryRequest, QueryResult,
-        TableDataResponse, TableInfo,
+        TableDataResponse, TableInfo, UpdateProjectRequest,
     },
     services,
     state::AppState,
@@ -32,6 +32,32 @@ pub async fn create_project(
         StatusCode::CREATED,
         Json(services::create_project(&state.pool, &state.config.secret_key, input).await?),
     ))
+}
+
+/// PUT /api/projects/:id
+///
+/// Partial update: absent fields keep their existing value.
+/// An empty string sets an optional field to NULL.
+/// Returns the updated project.
+pub async fn update_project(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateProjectRequest>,
+) -> Result<Json<Project>, AppError> {
+    Ok(Json(
+        services::update_project(&state.pool, &state.config.secret_key, id, input).await?,
+    ))
+}
+
+/// DELETE /api/projects/:id
+///
+/// Returns 204 No Content on success, 404 if the project does not exist.
+pub async fn delete_project(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    services::delete_project(&state.pool, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── Project-database exploration ──────────────────────────────────────────────

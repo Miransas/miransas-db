@@ -24,6 +24,16 @@ pub struct CreateProjectRequest {
     pub connection_string: Option<String>,
 }
 
+/// All fields are optional. Absent = keep existing. Empty string = set to NULL.
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub repository_url: Option<String>,
+    /// Empty string clears the stored connection string; non-empty re-encrypts.
+    pub connection_string: Option<String>,
+}
+
 // ── Databases ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

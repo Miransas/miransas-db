@@ -1,7 +1,7 @@
 use axum::{
     http::{HeaderValue, Method},
     middleware::from_fn_with_state,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -49,6 +49,12 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/projects",
             get(handlers::projects::list_projects).post(handlers::projects::create_project),
+        )
+        // PUT    /api/projects/:id   { name?, description?, repository_url?, connection_string? }
+        // DELETE /api/projects/:id
+        .route(
+            "/projects/:id",
+            put(handlers::projects::update_project).delete(handlers::projects::delete_project),
         )
         // GET  /api/projects/:id/tables
         .route("/projects/:id/tables", get(handlers::projects::list_tables))
