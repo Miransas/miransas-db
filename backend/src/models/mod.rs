@@ -162,6 +162,16 @@ pub struct CreateSecretRequest {
     pub notes: Option<String>,
 }
 
+/// Returned by GET /api/secrets/:id/reveal — includes the decrypted plaintext value.
+#[derive(Debug, Serialize)]
+pub struct SecretWithValue {
+    pub id: Uuid,
+    pub name: String,
+    pub value: String,
+    pub notes: Option<String>,
+    pub project_id: Option<Uuid>,
+}
+
 // ── Audit / Admin ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

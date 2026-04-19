@@ -14,4 +14,4 @@ pub use projects::{
     get_project_table_data, list_project_tables, list_projects, update_project,
 };
 pub use query::{execute_query, get_table_data, list_tables};
-pub use secrets::{create_secret, list_secrets};
+pub use secrets::{create_secret, delete_secret, list_secrets, reveal_secret};

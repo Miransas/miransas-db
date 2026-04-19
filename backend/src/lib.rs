@@ -101,6 +101,10 @@ pub fn build_router(state: AppState) -> Router {
             "/secrets",
             get(handlers::secrets::list_secrets).post(handlers::secrets::create_secret),
         )
+        // GET    /api/secrets/:id/reveal — decrypt and return value (audit logged)
+        // DELETE /api/secrets/:id
+        .route("/secrets/:id/reveal", get(handlers::secrets::reveal_secret))
+        .route("/secrets/:id", delete(handlers::secrets::delete_secret))
         // ── Audit logs ─────────────────────────────────────────────────────
         // GET /api/audit-logs?page=1&limit=50&resource_type=...&resource_id=...
         .route("/audit-logs", get(handlers::audit::list_audit_logs))
