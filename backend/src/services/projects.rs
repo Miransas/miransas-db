@@ -147,24 +147,35 @@ pub async fn update_project(
     id: Uuid,
     input: UpdateProjectRequest,
 ) -> Result<Project, AppError> {
-    let new_name = input
-        .name
-        .and_then(|n| if n.trim().is_empty() { None } else { Some(n.trim().to_string()) });
+    if let Some(ref n) = input.name {
+        required_text("name", n.clone())?;
+    }
+
+    let name_present = input.name.is_some();
+    let name_val = input.name.clone().unwrap_or_default();
+    let desc_present = input.description.is_some();
+    let desc_val = input.description.clone().unwrap_or_default();
+    let repo_present = input.repository_url.is_some();
+    let repo_val = input.repository_url.clone().unwrap_or_default();
 
     let project = sqlx::query_as::<_, Project>(
         r#"
         UPDATE projects
-        SET    name            = COALESCE($2, name),
-               description    = COALESCE($3, description),
-               repository_url = COALESCE($4, repository_url)
+        SET    name            = CASE WHEN $2 THEN $3            ELSE name            END,
+               description    = CASE WHEN $4 THEN NULLIF($5, '') ELSE description    END,
+               repository_url = CASE WHEN $6 THEN NULLIF($7, '') ELSE repository_url END,
+               updated_at     = NOW()
         WHERE  id = $1
         RETURNING id, name, description, repository_url, schema_name, created_at, updated_at
         "#,
     )
     .bind(id)
-    .bind(new_name)
-    .bind(empty_to_none(input.description))
-    .bind(empty_to_none(input.repository_url))
+    .bind(name_present)
+    .bind(name_val)
+    .bind(desc_present)
+    .bind(desc_val)
+    .bind(repo_present)
+    .bind(repo_val)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("project {id} not found")))?;
@@ -294,17 +305,24 @@ pub async fn execute_project_query(
     let schema_name = get_schema_name(pool, project_id).await?;
 
     let start = Instant::now();
-    let mut conn = pool.acquire().await?;
+    let mut tx = pool.begin().await?;
 
     sqlx::query(&format!(
         "SET LOCAL search_path TO \"{}\", public",
         schema_name
     ))
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
 
-    let result = run_sql(&mut conn, sql).await;
+    let result = run_sql(&mut *tx, sql).await;
     let duration_ms = start.elapsed().as_millis() as i32;
+
+    // Commit or rollback the user's query — the search_path change is
+    // scoped to this transaction and never leaks back to the pool.
+    match &result {
+        Ok(_) => { let _ = tx.commit().await; }
+        Err(_) => { let _ = tx.rollback().await; }
+    }
 
     let (success, err_msg, query_result) = match result {
         Ok(qr) => (true, None, Ok(qr)),

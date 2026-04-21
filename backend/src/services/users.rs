@@ -329,7 +329,10 @@ pub async fn ban_user(
         "UPDATE \"{}\".\"{}\" SET \"{}\" = TRUE WHERE \"{}\"::TEXT = $1",
         schema_name, config.users_table, banned_column, config.id_column
     );
-    sqlx::query(&sql).bind(user_id).execute(pool).await?;
+    let result = sqlx::query(&sql).bind(user_id).execute(pool).await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("user {user_id} not found")));
+    }
 
     insert_audit_log(
         pool,
@@ -362,7 +365,10 @@ pub async fn unban_user(
         "UPDATE \"{}\".\"{}\" SET \"{}\" = FALSE WHERE \"{}\"::TEXT = $1",
         schema_name, config.users_table, banned_column, config.id_column
     );
-    sqlx::query(&sql).bind(user_id).execute(pool).await?;
+    let result = sqlx::query(&sql).bind(user_id).execute(pool).await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("user {user_id} not found")));
+    }
 
     insert_audit_log(
         pool,
@@ -417,11 +423,14 @@ pub async fn reset_password(
         "UPDATE \"{}\".\"{}\" SET \"{}\" = $2 WHERE \"{}\"::TEXT = $1",
         schema_name, config.users_table, password_column, config.id_column
     );
-    sqlx::query(&sql)
+    let result = sqlx::query(&sql)
         .bind(user_id)
         .bind(&hashed)
         .execute(pool)
         .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("user {user_id} not found")));
+    }
 
     insert_audit_log(
         pool,

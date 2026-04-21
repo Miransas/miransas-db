@@ -53,20 +53,25 @@ pub fn empty_to_none(value: Option<String>) -> Option<String> {
 
 // ── SQL identifier safety ─────────────────────────────────────────────────────
 
-/// Validate that an identifier contains only `[a-z0-9_]` and is 1–63 chars.
-/// Does not allow uppercase — Postgres unquoted identifiers are always folded to lowercase.
+/// Validate that an identifier contains only `[a-zA-Z0-9_]`, is 1–63 chars,
+/// and does not start with a digit.
 pub fn ensure_safe_ident(name: &str) -> Result<(), AppError> {
     if name.is_empty() || name.len() > 63 {
         return Err(AppError::BadRequest(format!(
             "invalid identifier: {name:?} — must be 1–63 chars"
         )));
     }
+    if name.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return Err(AppError::BadRequest(format!(
+            "invalid identifier: {name:?} — must not start with a digit"
+        )));
+    }
     if !name
         .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
     {
         return Err(AppError::BadRequest(format!(
-            "identifier has invalid chars: {name:?} — only [a-z0-9_] allowed"
+            "identifier has invalid chars: {name:?} — only [a-zA-Z0-9_] allowed"
         )));
     }
     Ok(())
@@ -96,6 +101,7 @@ pub async fn generate_schema_name(pool: &PgPool, name: &str) -> Result<String, A
     } else {
         cleaned
     };
+    let cleaned: String = cleaned.chars().take(58).collect();
 
     let candidate = format!("proj_{cleaned}");
 
