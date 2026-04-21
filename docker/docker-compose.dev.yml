@@ -1,31 +1,63 @@
-version: "3.9"
-
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: miransas-db-postgres
-    restart: always
-    environment:
-      POSTGRES_USER: sardor
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}
-      POSTGRES_DB: miransas_db
-    ports:
-      - "5432:5432" # MacBook üzerinden 'localhost:5432' ile bağlanabilirsin
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
 
-  # Backend'i Docker içinde koşturmak istiyorsan:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: miransas-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     sardor
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB:       miransas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sardor -d miransas_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - miransas_dev_net
+
+  # ── Backend (hot-reload via cargo-watch) ────────────────────────────────────
   backend:
-    image: rust:1.75-slim # Veya kendi image ismin
-    container_name: miransas-db-backend
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: miransas-dev-backend
+    restart: unless-stopped
     volumes:
       - ../backend:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - target-cache:/app/target
     working_dir: /app
-    # Docker içindeyken host adı 'postgres' olur
     environment:
-      DATABASE_URL: postgres://sardor:${POSTGRES_PASSWORD:-Mir@2001_2021_2023ms}@postgres:5432/miransas_db
-      RUST_LOG: debug
+      DATABASE_URL:             postgres://sardor:devpassword@postgres:5432/miransas_db
+      DATABASE_MAX_CONNECTIONS: "5"
+      APP_HOST:                 "0.0.0.0"
+      APP_PORT:                 "3001"
+      ADMIN_PASSWORD:           dev-admin-password-ok!
+      JWT_SECRET:               dev-jwt-secret-key-32chars-minimum!
+      SECRET_KEY:               dev-secret-key-32chars-minimum-ok!
+      CORS_ORIGIN:              http://localhost:3000
+      RUST_LOG:                 miransas_db=debug,tower_http=debug
+    ports:
+      - "3001:3001"
     depends_on:
-      - postgres
-    # Eğer cargo-watch yüklü ise hot-reload çalışır
-    command: cargo run
+      postgres:
+        condition: service_healthy
+    networks:
+      - miransas_dev_net
+
+volumes:
+  dev_postgres_data:
+  cargo-registry:
+  cargo-git:
+  target-cache:
+
+networks:
+  miransas_dev_net:
+    driver: bridge

@@ -40,7 +40,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workdir: backend
+          workspaces: backend
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: backend
@@ -69,7 +69,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workdir: backend
+          workspaces: backend
 
       - name: Run tests
         run: cargo test --all-features
@@ -91,7 +91,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workdir: backend
+          workspaces: backend
       - name: Build release binary
         run: cargo build --release
         working-directory: backend

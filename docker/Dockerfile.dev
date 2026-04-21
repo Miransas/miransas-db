@@ -1,0 +1,14 @@
+FROM rust:1-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    gcc \
+    libc6-dev \
+    curl \
+    && cargo install cargo-watch \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+CMD ["cargo", "watch", "-x", "run"]
