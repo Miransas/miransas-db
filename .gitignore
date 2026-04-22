@@ -2,6 +2,8 @@
 # Root
 .DS_Store
 .env
+.secret
+/secret
 
 # Backend
 backend/target/

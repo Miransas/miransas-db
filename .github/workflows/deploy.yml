@@ -1,0 +1,40 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # manual trigger from GitHub UI
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false  # don't cancel a running deploy
+
+jobs:
+  deploy:
+    name: SSH + pull + rebuild
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ~/miransas-db
+            echo ">>> Pulling latest code"
+            git fetch origin main
+            git reset --hard origin/main
+            echo ">>> Rebuilding containers"
+            ./deploy.sh
+            echo ">>> Waiting for health check"
+            sleep 20
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' miransas-db-backend)
+            echo "Backend status: $STATUS"
+            if [ "$STATUS" != "healthy" ]; then
+              echo "Deploy FAILED - backend not healthy"
+              docker logs miransas-db-backend --tail 30
+              exit 1
+            fi
+            echo ">>> Deploy OK"

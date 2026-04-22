@@ -4,8 +4,7 @@
 
 CREATE SCHEMA IF NOT EXISTS _miransas;
 
--- Tablolar zaten _miransas'ta olabilir (yeni deploy), 
--- ya da public'te olabilir (eski DB). İkisi de çalışsın.
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables 
@@ -29,14 +28,14 @@ BEGIN
   END IF;
 END $$;
 
--- schema_name kolonu ekle (yoksa)
+-- schema_name kolon 
 ALTER TABLE _miransas.projects ADD COLUMN IF NOT EXISTS schema_name TEXT;
 UPDATE _miransas.projects 
   SET schema_name = 'proj_' || lower(regexp_replace(name, '[^a-zA-Z0-9]+', '_', 'g'))
   WHERE schema_name IS NULL;
 ALTER TABLE _miransas.projects ALTER COLUMN schema_name SET NOT NULL;
 
--- unique constraint (yoksa)
+-- unique constraint 
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_schema_name_unique') THEN
@@ -44,10 +43,10 @@ BEGIN
   END IF;
 END $$;
 
--- connection_string kolonu (varsa) kaldır
+-- connection_string kolon
 ALTER TABLE _miransas.projects DROP COLUMN IF EXISTS connection_string_encrypted;
 
--- databases tablosu varsa kaldır
+-- databases table
 DROP TABLE IF EXISTS _miransas.databases;
 
 -- query_history
