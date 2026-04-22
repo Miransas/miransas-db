@@ -457,10 +457,26 @@ pub async fn export_users(
     ensure_safe_ident(&config.users_table)?;
     let quoted = format!("\"{}\".\"{}\"", schema_name, config.users_table);
 
+    let max = q.max_rows.unwrap_or(100_000).clamp(1, 1_000_000);
+
+    let total: i64 =
+        sqlx::query_scalar(&format!("SELECT COUNT(*)::BIGINT FROM {}", quoted))
+            .fetch_one(pool)
+            .await?;
+
+    if total > max {
+        return Err(AppError::BadRequest(format!(
+            "export limit exceeded: table has {} rows, max_rows is {}. \
+             Raise max_rows query param.",
+            total, max
+        )));
+    }
+
     let raw: Vec<String> = sqlx::query_scalar(&format!(
-        "SELECT row_to_json(_t)::TEXT FROM (SELECT * FROM {}) _t",
+        "SELECT row_to_json(_t)::TEXT FROM (SELECT * FROM {} LIMIT $1) _t",
         quoted
     ))
+    .bind(max)
     .fetch_all(pool)
     .await?;
 

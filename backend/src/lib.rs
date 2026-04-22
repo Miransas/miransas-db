@@ -100,6 +100,23 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/secrets/:id/reveal", get(handlers::secrets::reveal_secret))
         .route("/secrets/:id", delete(handlers::secrets::delete_secret))
+        // ── Saved queries ──────────────────────────────────────────────────
+        .route(
+            "/projects/:project_id/saved-queries",
+            get(handlers::saved_queries::list_saved_queries)
+                .post(handlers::saved_queries::create_saved_query),
+        )
+        .route(
+            "/saved-queries/:id",
+            get(handlers::saved_queries::get_saved_query)
+                .put(handlers::saved_queries::update_saved_query)
+                .delete(handlers::saved_queries::delete_saved_query),
+        )
+        // ── Query history ──────────────────────────────────────────────────
+        .route(
+            "/projects/:project_id/query-history",
+            get(handlers::query_log::list_history),
+        )
         // ── Audit logs ─────────────────────────────────────────────────────
         .route("/audit-logs", get(handlers::audit::list_audit_logs))
         // ── Admin ──────────────────────────────────────────────────────────

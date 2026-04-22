@@ -213,4 +213,61 @@ pub struct ResetPasswordRequest {
 pub struct ExportQuery {
     /// "csv" or "json" (default "json")
     pub format: Option<String>,
+    pub max_rows: Option<i64>,
+}
+
+// ── Saved queries ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct SavedQuery {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub sql: String,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSavedQueryRequest {
+    pub name: String,
+    pub sql: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSavedQueryRequest {
+    pub name: Option<String>,
+    pub sql: Option<String>,
+    pub notes: Option<String>,
+}
+
+// ── Query history ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct QueryHistoryEntry {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub sql: String,
+    pub duration_ms: i32,
+    pub rows_affected: Option<i64>,
+    pub success: bool,
+    pub error_message: Option<String>,
+    pub executed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryHistoryFilter {
+    pub page: Option<i64>,
+    pub limit: Option<i64>,
+    pub success: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryHistoryResponse {
+    pub rows: Vec<QueryHistoryEntry>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
 }

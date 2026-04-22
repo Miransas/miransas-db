@@ -3,5 +3,7 @@ pub mod audit;
 pub mod auth;
 pub mod health;
 pub mod projects;
+pub mod query_log;
+pub mod saved_queries;
 pub mod secrets;
 pub mod users;

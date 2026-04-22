@@ -4,6 +4,8 @@ mod projects;
 mod secrets;
 mod shared;
 pub mod users;
+pub mod saved_queries;
+pub mod query_log;
 
 pub use admin::admin_summary;
 pub use audit::list_audit_logs;
