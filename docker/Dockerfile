@@ -19,6 +19,7 @@ FROM chef AS planner
 # Monorepo yapısında olduğun için dosyaları doğru yoldan çekelim
 COPY backend/Cargo.toml backend/Cargo.lock ./
 COPY backend/src ./src
+COPY backend/benches ./benches
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ─────────────────────────────────────────────────────────────────────────────
