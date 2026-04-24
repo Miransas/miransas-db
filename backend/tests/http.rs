@@ -18,6 +18,9 @@ fn test_config() -> Config {
         jwt_secret: "test-jwt-secret-key-exactly-32chars".to_string(),
         secret_key: "test-secret-key-with-at-least-32c!".to_string(),
         cors_origin: "http://localhost:3000".to_string(),
+        public_db_host: "panel.miransas.com".to_string(),
+        public_db_port: 5432,
+        public_db_name: "miransas".to_string(),
     }
 }
 

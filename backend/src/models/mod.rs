@@ -11,8 +11,31 @@ pub struct Project {
     pub description: Option<String>,
     pub repository_url: Option<String>,
     pub schema_name: String,
+    pub db_role: Option<String>,
+    #[serde(skip_serializing)]
+    pub db_password_encrypted: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConnectionInfo {
+    pub role: String,
+    pub password: String,
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub schema: String,
+    pub connection_string: String,
+    pub psql_command: String,
+    pub env_snippet: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectResetPasswordResponse {
+    pub role: String,
+    pub password: String,
+    pub connection_string: String,
 }
 
 #[derive(Debug, Deserialize)]

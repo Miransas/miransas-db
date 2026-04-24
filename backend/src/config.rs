@@ -12,6 +12,9 @@ pub struct Config {
     pub jwt_secret: String,
     pub secret_key: String,
     pub cors_origin: String,
+    pub public_db_host: String,
+    pub public_db_port: u16,
+    pub public_db_name: String,
 }
 
 impl Config {
@@ -28,6 +31,13 @@ impl Config {
         let jwt_secret = required_env("JWT_SECRET")?;
         let secret_key = required_env("SECRET_KEY")?;
         let cors_origin = env_or("CORS_ORIGIN", "http://localhost:3000");
+        let public_db_host = env_or("MIRANSAS_PUBLIC_DB_HOST", "panel.miransas.com");
+        let public_db_port = env_or("MIRANSAS_PUBLIC_DB_PORT", "5432")
+            .parse::<u16>()
+            .context("MIRANSAS_PUBLIC_DB_PORT must be a valid port number")?;
+        let public_db_name = std::env::var("MIRANSAS_PUBLIC_DB_NAME")
+            .or_else(|_| std::env::var("POSTGRES_DB"))
+            .unwrap_or_else(|_| "miransas".to_string());
 
         if admin_password.len() < 8 {
             anyhow::bail!("ADMIN_PASSWORD must be at least 8 characters");
@@ -48,6 +58,9 @@ impl Config {
             jwt_secret,
             secret_key,
             cors_origin,
+            public_db_host,
+            public_db_port,
+            public_db_name,
         })
     }
 

@@ -12,6 +12,7 @@ pub use admin::admin_summary;
 pub use audit::list_audit_logs;
 pub use projects::{
     create_project, delete_project, delete_project_row, execute_project_query,
-    get_project, get_project_table_data, list_project_tables, list_projects, update_project,
+    get_connection_info, get_project, get_project_table_data, list_project_tables,
+    list_projects, reset_project_password, update_project,
 };
 pub use secrets::{create_secret, delete_secret, list_secrets, reveal_secret};

@@ -8,8 +8,9 @@ use uuid::Uuid;
 use crate::{
     errors::AppError,
     models::{
-        CreateProjectRequest, DeleteRowQuery, PaginationQuery, Project, QueryRequest, QueryResult,
-        TableDataResponse, TableInfo, UpdateProjectRequest,
+        ConnectionInfo, CreateProjectRequest, DeleteRowQuery, PaginationQuery, Project,
+        ProjectResetPasswordResponse, QueryRequest, QueryResult, TableDataResponse, TableInfo,
+        UpdateProjectRequest,
     },
     services,
     state::AppState,
@@ -37,7 +38,7 @@ pub async fn create_project(
 ) -> Result<(StatusCode, Json<Project>), AppError> {
     Ok((
         StatusCode::CREATED,
-        Json(services::create_project(&state.pool, input).await?),
+        Json(services::create_project(&state.pool, &state.config.secret_key, input).await?),
     ))
 }
 
@@ -92,6 +93,26 @@ pub async fn execute_query(
 ) -> Result<Json<QueryResult>, AppError> {
     Ok(Json(
         services::execute_project_query(&state.pool, project_id, &input.sql).await?,
+    ))
+}
+
+/// GET /api/projects/:id/connection
+pub async fn get_connection(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ConnectionInfo>, AppError> {
+    Ok(Json(
+        services::get_connection_info(&state.pool, &state.config, id).await?,
+    ))
+}
+
+/// POST /api/projects/:id/reset-password
+pub async fn reset_project_password(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ProjectResetPasswordResponse>, AppError> {
+    Ok(Json(
+        services::reset_project_password(&state.pool, &state.config, id).await?,
     ))
 }
 

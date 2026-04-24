@@ -39,7 +39,7 @@ fn build_column_fragment(col: &ColumnSpec) -> Result<String, AppError> {
     let validated_type = validate_data_type(&col.data_type)?;
     let mut frag = format!("\"{}\" {}", col.name, validated_type);
 
-    if col.nullable.unwrap_or(true) == false {
+    if !col.nullable.unwrap_or(true) {
         frag.push_str(" NOT NULL");
     }
     if col.primary_key.unwrap_or(false) {

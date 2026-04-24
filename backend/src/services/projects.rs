@@ -3,11 +3,13 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::{
+    config::Config,
     errors::AppError,
     models::{
-        CreateProjectRequest, Project, QueryResult, TableDataResponse, TableInfo,
-        UpdateProjectRequest,
+        ConnectionInfo, CreateProjectRequest, Project, ProjectResetPasswordResponse, QueryResult,
+        TableDataResponse, TableInfo, UpdateProjectRequest,
     },
+    utils::crypto,
 };
 
 use super::shared::{
@@ -80,11 +82,106 @@ async fn insert_audit_log_tx(
     Ok(())
 }
 
+// ── URL helpers ───────────────────────────────────────────────────────────────
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push_str(&format!("%{b:02X}"));
+            }
+        }
+    }
+    out
+}
+
+fn build_connection_string(role: &str, password: &str, config: &Config, schema: &str) -> String {
+    format!(
+        "postgres://{}:{}@{}:{}/{}?sslmode=require&options=-csearch_path%3D{}",
+        percent_encode(role),
+        percent_encode(password),
+        config.public_db_host,
+        config.public_db_port,
+        config.public_db_name,
+        percent_encode(schema),
+    )
+}
+
+// ── Role provisioning helpers ─────────────────────────────────────────────────
+
+async fn create_role_with_grants(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    role: &str,
+    password: &str,
+    schema_name: &str,
+) -> Result<(), AppError> {
+    sqlx::query(&format!(
+        "CREATE ROLE \"{}\" WITH LOGIN PASSWORD '{}'",
+        role,
+        password.replace('\'', "''")
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    let db_name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&mut **tx)
+        .await?;
+
+    sqlx::query(&format!(
+        "GRANT CONNECT ON DATABASE \"{}\" TO \"{}\"",
+        db_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(&format!(
+        "GRANT USAGE, CREATE ON SCHEMA \"{}\" TO \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(&format!(
+        "GRANT ALL ON ALL TABLES IN SCHEMA \"{}\" TO \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(&format!(
+        "GRANT ALL ON ALL SEQUENCES IN SCHEMA \"{}\" TO \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(&format!(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{}\" GRANT ALL ON TABLES TO \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(&format!(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{}\" GRANT ALL ON SEQUENCES TO \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 pub async fn list_projects(pool: &PgPool) -> Result<Vec<Project>, AppError> {
     let projects = sqlx::query_as::<_, Project>(
-        "SELECT id, name, description, repository_url, schema_name, created_at, updated_at \
+        "SELECT id, name, description, repository_url, schema_name, \
+         db_role, db_password_encrypted, created_at, updated_at \
          FROM projects ORDER BY created_at DESC",
     )
     .fetch_all(pool)
@@ -94,7 +191,8 @@ pub async fn list_projects(pool: &PgPool) -> Result<Vec<Project>, AppError> {
 
 pub async fn get_project(pool: &PgPool, id: Uuid) -> Result<Project, AppError> {
     sqlx::query_as::<_, Project>(
-        "SELECT id, name, description, repository_url, schema_name, created_at, updated_at \
+        "SELECT id, name, description, repository_url, schema_name, \
+         db_role, db_password_encrypted, created_at, updated_at \
          FROM projects WHERE id = $1",
     )
     .bind(id)
@@ -105,29 +203,44 @@ pub async fn get_project(pool: &PgPool, id: Uuid) -> Result<Project, AppError> {
 
 pub async fn create_project(
     pool: &PgPool,
+    secret_key: &str,
     input: CreateProjectRequest,
 ) -> Result<Project, AppError> {
     let name = required_text("name", input.name)?;
     let schema_name = generate_schema_name(pool, &name).await?;
     ensure_safe_ident(&schema_name)?;
 
+    let role = format!("{}_user", schema_name);
+    ensure_safe_ident(&role)?;
+    let password = crypto::generate_db_password();
+    let encrypted = crypto::encrypt(secret_key, &password)?;
+
     let mut tx = pool.begin().await?;
 
+    create_role_with_grants(&mut tx, &role, &password, &schema_name).await?;
+
+    sqlx::query(&format!(
+        "CREATE SCHEMA \"{}\" AUTHORIZATION \"{}\"",
+        schema_name, role
+    ))
+    .execute(&mut *tx)
+    .await?;
+
     let project = sqlx::query_as::<_, Project>(
-        "INSERT INTO projects (name, description, repository_url, schema_name) \
-         VALUES ($1, $2, $3, $4) \
-         RETURNING id, name, description, repository_url, schema_name, created_at, updated_at",
+        "INSERT INTO projects \
+         (name, description, repository_url, schema_name, db_role, db_password_encrypted) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         RETURNING id, name, description, repository_url, schema_name, \
+         db_role, db_password_encrypted, created_at, updated_at",
     )
     .bind(&name)
     .bind(empty_to_none(input.description))
     .bind(empty_to_none(input.repository_url))
     .bind(&schema_name)
+    .bind(&role)
+    .bind(&encrypted)
     .fetch_one(&mut *tx)
     .await?;
-
-    sqlx::query(&format!("CREATE SCHEMA \"{}\"", schema_name))
-        .execute(&mut *tx)
-        .await?;
 
     insert_audit_log_tx(
         &mut tx,
@@ -166,7 +279,8 @@ pub async fn update_project(
                repository_url = CASE WHEN $6 THEN NULLIF($7, '') ELSE repository_url END,
                updated_at     = NOW()
         WHERE  id = $1
-        RETURNING id, name, description, repository_url, schema_name, created_at, updated_at
+        RETURNING id, name, description, repository_url, schema_name,
+                  db_role, db_password_encrypted, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -195,17 +309,24 @@ pub async fn update_project(
 pub async fn delete_project(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
-    let row = sqlx::query("SELECT schema_name FROM projects WHERE id = $1")
+    let row = sqlx::query("SELECT schema_name, db_role FROM projects WHERE id = $1")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("project {id} not found")))?;
 
     let schema_name: String = row.try_get("schema_name")?;
+    let db_role: Option<String> = row.try_get("db_role")?;
 
     sqlx::query(&format!("DROP SCHEMA \"{}\" CASCADE", schema_name))
         .execute(&mut *tx)
         .await?;
+
+    if let Some(ref role) = db_role {
+        sqlx::query(&format!("DROP ROLE IF EXISTS \"{}\"", role))
+            .execute(&mut *tx)
+            .await?;
+    }
 
     sqlx::query("DELETE FROM projects WHERE id = $1")
         .bind(id)
@@ -223,6 +344,112 @@ pub async fn delete_project(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 
     tx.commit().await?;
     Ok(())
+}
+
+// ── Connection info ───────────────────────────────────────────────────────────
+
+pub async fn get_connection_info(
+    pool: &PgPool,
+    config: &Config,
+    project_id: Uuid,
+) -> Result<ConnectionInfo, AppError> {
+    let project = get_project(pool, project_id).await?;
+
+    let role = project.db_role.ok_or_else(|| {
+        AppError::BadRequest(
+            "Project has no role yet, call reset-password first".to_string(),
+        )
+    })?;
+    let encrypted = project.db_password_encrypted.ok_or_else(|| {
+        AppError::BadRequest(
+            "Project has no role yet, call reset-password first".to_string(),
+        )
+    })?;
+
+    let password = crypto::decrypt(&config.secret_key, &encrypted)?;
+    let connection_string =
+        build_connection_string(&role, &password, config, &project.schema_name);
+
+    insert_audit_log(
+        pool,
+        "project.connection_revealed",
+        "project",
+        Some(project_id),
+        None,
+    )
+    .await?;
+
+    Ok(ConnectionInfo {
+        psql_command: format!("psql '{}'", connection_string),
+        env_snippet: format!("DATABASE_URL={}", connection_string),
+        role,
+        password,
+        host: config.public_db_host.clone(),
+        port: config.public_db_port,
+        database: config.public_db_name.clone(),
+        schema: project.schema_name,
+        connection_string,
+    })
+}
+
+pub async fn reset_project_password(
+    pool: &PgPool,
+    config: &Config,
+    project_id: Uuid,
+) -> Result<ProjectResetPasswordResponse, AppError> {
+    let project = get_project(pool, project_id).await?;
+
+    let new_password = crypto::generate_db_password();
+    let encrypted = crypto::encrypt(&config.secret_key, &new_password)?;
+
+    let mut tx = pool.begin().await?;
+
+    let role = if let Some(ref r) = project.db_role {
+        sqlx::query(&format!(
+            "ALTER ROLE \"{}\" WITH PASSWORD '{}'",
+            r,
+            new_password.replace('\'', "''")
+        ))
+        .execute(&mut *tx)
+        .await?;
+        r.clone()
+    } else {
+        let role = format!("{}_user", project.schema_name);
+        ensure_safe_ident(&role)?;
+        create_role_with_grants(&mut tx, &role, &new_password, &project.schema_name).await?;
+        role
+    };
+
+    sqlx::query(
+        "UPDATE projects \
+         SET db_role = $1, db_password_encrypted = $2, updated_at = NOW() \
+         WHERE id = $3",
+    )
+    .bind(&role)
+    .bind(&encrypted)
+    .bind(project_id)
+    .execute(&mut *tx)
+    .await?;
+
+    insert_audit_log_tx(
+        &mut tx,
+        "project.password_reset",
+        "project",
+        Some(project_id),
+        None,
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    let connection_string =
+        build_connection_string(&role, &new_password, config, &project.schema_name);
+
+    Ok(ProjectResetPasswordResponse {
+        role,
+        password: new_password,
+        connection_string,
+    })
 }
 
 // ── Table exploration ─────────────────────────────────────────────────────────
@@ -314,14 +541,18 @@ pub async fn execute_project_query(
     .execute(&mut *tx)
     .await?;
 
-    let result = run_sql(&mut *tx, sql).await;
+    let result = run_sql(&mut tx, sql).await;
     let duration_ms = start.elapsed().as_millis() as i32;
 
     // Commit or rollback the user's query — the search_path change is
     // scoped to this transaction and never leaks back to the pool.
     match &result {
-        Ok(_) => { let _ = tx.commit().await; }
-        Err(_) => { let _ = tx.rollback().await; }
+        Ok(_) => {
+            let _ = tx.commit().await;
+        }
+        Err(_) => {
+            let _ = tx.rollback().await;
+        }
     }
 
     let (success, err_msg, query_result) = match result {

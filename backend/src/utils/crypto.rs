@@ -72,6 +72,17 @@ fn cipher(secret_key: &str) -> Result<Aes256Gcm, CryptoError> {
     Aes256Gcm::new_from_slice(&key).map_err(|_| CryptoError::InvalidKey)
 }
 
+pub fn generate_db_password() -> String {
+    const CHARSET: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("random source unavailable");
+    bytes
+        .iter()
+        .map(|&b| CHARSET[(b as usize) % CHARSET.len()] as char)
+        .collect()
+}
+
 fn random_nonce() -> Result<[u8; NONCE_LEN], CryptoError> {
     let mut nonce = [0_u8; NONCE_LEN];
     getrandom::getrandom(&mut nonce).map_err(|_| CryptoError::Random)?;

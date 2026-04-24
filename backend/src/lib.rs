@@ -67,6 +67,14 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/:id/tables/:table/:row_id",
             delete(handlers::projects::delete_row),
         )
+        .route(
+            "/projects/:id/connection",
+            get(handlers::projects::get_connection),
+        )
+        .route(
+            "/projects/:id/reset-password",
+            post(handlers::projects::reset_project_password),
+        )
         // ── User management ────────────────────────────────────────────────
         .route(
             "/projects/:id/user-config",
