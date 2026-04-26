@@ -36,10 +36,12 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProjectRequest>,
 ) -> Result<(StatusCode, Json<Project>), AppError> {
-    Ok((
-        StatusCode::CREATED,
-        Json(services::create_project(&state.pool, &state.config.secret_key, input).await?),
-    ))
+    tracing::info!(project_name = input.name, "handler: create_project request received");
+    let result = services::create_project(&state.pool, &state.config.secret_key, input).await;
+    if let Err(ref e) = result {
+        tracing::error!(error = %e, error_detail = ?e, "handler: create_project returned error");
+    }
+    Ok((StatusCode::CREATED, Json(result?)))
 }
 
 /// PUT /api/projects/:id

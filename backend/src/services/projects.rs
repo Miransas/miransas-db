@@ -119,60 +119,76 @@ async fn create_role_with_grants(
     password: &str,
     schema_name: &str,
 ) -> Result<(), AppError> {
+    tracing::info!(role, schema_name, "role_grants: CREATE ROLE");
     sqlx::query(&format!(
         "CREATE ROLE \"{}\" WITH LOGIN PASSWORD '{}'",
         role,
         password.replace('\'', "''")
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, error = %e, error_detail = ?e, "role_grants: CREATE ROLE failed"))?;
 
     let db_name: String = sqlx::query_scalar("SELECT current_database()")
         .fetch_one(&mut **tx)
-        .await?;
+        .await
+        .inspect_err(|e| tracing::error!(error = %e, "role_grants: SELECT current_database() failed"))?;
 
+    tracing::info!(role, db_name, "role_grants: GRANT CONNECT ON DATABASE");
     sqlx::query(&format!(
         "GRANT CONNECT ON DATABASE \"{}\" TO \"{}\"",
         db_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, db_name, error = %e, error_detail = ?e, "role_grants: GRANT CONNECT failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: GRANT USAGE CREATE ON SCHEMA");
     sqlx::query(&format!(
         "GRANT USAGE, CREATE ON SCHEMA \"{}\" TO \"{}\"",
         schema_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, schema_name, error = %e, error_detail = ?e, "role_grants: GRANT USAGE CREATE failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: GRANT ALL ON ALL TABLES");
     sqlx::query(&format!(
         "GRANT ALL ON ALL TABLES IN SCHEMA \"{}\" TO \"{}\"",
         schema_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, schema_name, error = %e, error_detail = ?e, "role_grants: GRANT ALL TABLES failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: GRANT ALL ON ALL SEQUENCES");
     sqlx::query(&format!(
         "GRANT ALL ON ALL SEQUENCES IN SCHEMA \"{}\" TO \"{}\"",
         schema_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, schema_name, error = %e, error_detail = ?e, "role_grants: GRANT ALL SEQUENCES failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: ALTER DEFAULT PRIVILEGES TABLES");
     sqlx::query(&format!(
         "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{}\" GRANT ALL ON TABLES TO \"{}\"",
         schema_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, schema_name, error = %e, error_detail = ?e, "role_grants: ALTER DEFAULT PRIV TABLES failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: ALTER DEFAULT PRIVILEGES SEQUENCES");
     sqlx::query(&format!(
         "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{}\" GRANT ALL ON SEQUENCES TO \"{}\"",
         schema_name, role
     ))
     .execute(&mut **tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(role, schema_name, error = %e, error_detail = ?e, "role_grants: ALTER DEFAULT PRIV SEQUENCES failed"))?;
 
+    tracing::info!(role, schema_name, "role_grants: all grants done");
     Ok(())
 }
 
@@ -207,25 +223,42 @@ pub async fn create_project(
     input: CreateProjectRequest,
 ) -> Result<Project, AppError> {
     let name = required_text("name", input.name)?;
-    let schema_name = generate_schema_name(pool, &name).await?;
+    tracing::info!(project_name = name, "create_project: start");
+
+    let schema_name = generate_schema_name(pool, &name)
+        .await
+        .inspect_err(|e| tracing::error!(project_name = name, error = %e, "create_project: generate_schema_name failed"))?;
     ensure_safe_ident(&schema_name)?;
+    tracing::info!(project_name = name, schema_name, "create_project: schema_name generated");
 
     let role = format!("{}_user", schema_name);
     ensure_safe_ident(&role)?;
+
     let password = crypto::generate_db_password();
-    let encrypted = crypto::encrypt(secret_key, &password)?;
+    let encrypted = crypto::encrypt(secret_key, &password)
+        .inspect_err(|e| tracing::error!(error = %e, "create_project: AES-GCM encryption failed — check MIRANSAS_ENCRYPTION_KEY env var"))?;
+    tracing::info!(role, schema_name, "create_project: password generated and encrypted");
 
-    let mut tx = pool.begin().await?;
+    tracing::info!(role, schema_name, "create_project: beginning transaction");
+    let mut tx = pool.begin()
+        .await
+        .inspect_err(|e| tracing::error!(error = %e, error_detail = ?e, "create_project: pool.begin failed"))?;
 
+    tracing::info!(role, schema_name, "create_project: creating role with grants");
     create_role_with_grants(&mut tx, &role, &password, &schema_name).await?;
+    tracing::info!(role, schema_name, "create_project: role and grants OK");
 
+    tracing::info!(role, schema_name, "create_project: CREATE SCHEMA");
     sqlx::query(&format!(
         "CREATE SCHEMA \"{}\" AUTHORIZATION \"{}\"",
         schema_name, role
     ))
     .execute(&mut *tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(schema_name, role, error = %e, error_detail = ?e, "create_project: CREATE SCHEMA failed"))?;
+    tracing::info!(schema_name, "create_project: schema created");
 
+    tracing::info!(project_name = name, schema_name, role, "create_project: INSERT into projects");
     let project = sqlx::query_as::<_, Project>(
         "INSERT INTO projects \
          (name, description, repository_url, schema_name, db_role, db_password_encrypted) \
@@ -240,8 +273,11 @@ pub async fn create_project(
     .bind(&role)
     .bind(&encrypted)
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(project_name = name, schema_name, error = %e, error_detail = ?e, "create_project: INSERT into projects failed"))?;
+    tracing::info!(project_id = %project.id, "create_project: project row inserted");
 
+    tracing::info!(project_id = %project.id, "create_project: inserting audit log");
     insert_audit_log_tx(
         &mut tx,
         "create",
@@ -249,9 +285,15 @@ pub async fn create_project(
         Some(project.id),
         Some(format!("created project {}", project.name)),
     )
-    .await?;
+    .await
+    .inspect_err(|e| tracing::error!(project_id = %project.id, error = %e, "create_project: audit_log insert failed"))?;
 
-    tx.commit().await?;
+    tracing::info!(project_id = %project.id, "create_project: committing transaction");
+    tx.commit()
+        .await
+        .inspect_err(|e| tracing::error!(project_id = %project.id, error = %e, error_detail = ?e, "create_project: tx.commit failed"))?;
+
+    tracing::info!(project_id = %project.id, project_name = name, schema_name, "create_project: done OK");
     Ok(project)
 }
 

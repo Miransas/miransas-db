@@ -12,3 +12,4 @@ backend/.env
 # Frontend
 frontend/.next/
 frontend/node_modules/
+Added step-by-step tracing logs to create_project and create_role_with_grants so every SQL operation logs on failure with full Postgres error detail. Deploy the backend to see which exact step fails in production. (disable recaps in /config) 

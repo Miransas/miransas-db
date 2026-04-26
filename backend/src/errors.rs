@@ -66,8 +66,14 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        if matches!(self, Self::Database(_) | Self::Crypto(_)) {
-            error!(error = %self, "request failed");
+        match &self {
+            Self::Database(e) => {
+                error!(error = %e, error_detail = ?e, "request failed: database error");
+            }
+            Self::Crypto(e) => {
+                error!(error = %e, "request failed: crypto error — MIRANSAS_ENCRYPTION_KEY may be missing or invalid");
+            }
+            _ => {}
         }
 
         let status = self.status_code();
